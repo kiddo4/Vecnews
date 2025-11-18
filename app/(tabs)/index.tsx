@@ -1,98 +1,178 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
+import { useState, useEffect } from 'react';
+import { FlatList, StyleSheet, RefreshControl, ActivityIndicator, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { ThemedText } from '@/components/themed-text';
+import { ArticleCard } from '@/components/article-card';
+import { Article } from '@/types/article';
+import { fetchTopHeadlines } from '@/services/newsApi';
+import { getUserPosts } from '@/services/storage';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Colors } from '@/constants/theme';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const loadArticles = async () => {
+    try {
+      const [newsArticles, userPosts] = await Promise.all([
+        fetchTopHeadlines(),
+        getUserPosts(),
+      ]);
+
+      // Combine user posts and news articles
+      const combined = [...userPosts, ...newsArticles];
+      setArticles(combined);
+    } catch (error) {
+      console.error('Error loading articles:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadArticles();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadArticles();
+  };
+
+  const handleArticlePress = (article: Article) => {
+    router.push({
+      pathname: '/article/[id]',
+      params: {
+        id: article.id,
+        article: JSON.stringify(article),
+      },
+    });
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient
+        colors={
+          colorScheme === 'dark'
+            ? ['#1a1a2e', '#16213e', '#0f3460']
+            : ['#e8f5e9', '#f1f8e9', '#fff9c4']
+        }
+        style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={colors.tint} />
+        <ThemedText style={styles.loadingText}>Loading news...</ThemedText>
+      </LinearGradient>
+    );
+  }
+
+  return (
+    <LinearGradient
+      colors={
+        colorScheme === 'dark'
+          ? ['#1a1a2e', '#16213e', '#0f3460']
+          : ['#e8f5e9', '#f1f8e9', '#fff9c4']
+      }
+      style={styles.container}>
+      <FlatList
+        data={articles}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item, index }) => (
+          <ArticleCard article={item} onPress={() => handleArticlePress(item)} />
+        )}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <View style={styles.headerTop}>
+              <View>
+                <ThemedText type="title" style={styles.headerTitle}>
+                  VecNews
+                </ThemedText>
+                <View style={[styles.titleUnderline, { backgroundColor: colors.tint }]} />
+              </View>
+            </View>
+            <ThemedText style={styles.headerSubtitle}>
+              📰 Latest News & Stories
+            </ThemedText>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <ThemedText style={styles.emptyText}>No articles available</ThemedText>
+            <ThemedText style={styles.emptySubtext}>Pull down to refresh</ThemedText>
+          </View>
+        }
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.tint}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+      />
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    opacity: 0.7,
+  },
+  header: {
+    padding: 24,
+    paddingTop: 60,
+    paddingBottom: 24,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  headerTitle: {
+    fontSize: 42,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  titleUnderline: {
+    height: 4,
+    width: 60,
+    marginTop: 8,
+    borderRadius: 2,
+  },
+  headerSubtitle: {
+    fontSize: 17,
+    opacity: 0.8,
+    fontWeight: '500',
+  },
+  listContent: {
+    paddingBottom: 120,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 18,
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  emptySubtext: {
+    fontSize: 14,
+    opacity: 0.6,
   },
 });
